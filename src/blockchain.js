@@ -49,6 +49,10 @@ class Blockchain {
         });
     }
 
+    // getLastest block method
+    getLatestBlock() {
+        return this.chain[this.chain.length - 1];
+    }
     /**
      * _addBlock(block) will store a block in the chain
      * @param {*} block 
@@ -64,18 +68,18 @@ class Blockchain {
     _addBlock(block) {
         let self = this;
         return new Promise(async (resolve, reject) => {
-           let height = self.chain.length;
-           block.previousBlockHash = self.chain[height - 1] ? self.chain[height - 1].hash : null;
-           block.height = height;
-           block.time = new Date().getTime().toString().slice(0,-3);
-           block.hash = await SHA256(JSON.stringify(block)).toString();
-           const validateBlock = block.hash && (block.hash.length === 64) && (block.height === self.chain.length) && block.time;
-           validateBlock ? resolve(block) : reject(new Error('Invalid block cannot be added'));
+            let height = self.chain.length;
+            block.previousBlockHash = self.chain[height - 1] ? self.chain[height - 1].hash : null;
+            block.height = height;
+            block.time = new Date().getTime().toString().slice(0,-3);
+            block.hash = await SHA256(JSON.stringify(block)).toString();
+            const validateBlock = block.hash && (block.hash.length === 64) && (block.height === self.chain.length) && block.time;
+            validateBlock ? resolve(block) : reject(new Error('Invalid block cannot be added'));
         })
         .catch(error => console.log('[error]', error))
         .then(block => {
-            this.chain.push(block);
-            this.height = this.chain.length - 1;
+            self.chain.push(block);
+            self.height = this.chain.length - 1;
             return block;
         });
     }
@@ -119,12 +123,14 @@ class Blockchain {
             let currentTime = parseInt(new Date().getTime().toString().slice(0,-3));
             let spendTime = currentTime - requestTime;
             // check if time elapsed is less than 5 minutes
-            if (spendTime > (5 * 60)) {
-                if (!bitcoinMessage.verify(message, address, signature)) {
+            if (spendTime < (5 * 60 * 1000)) {
+                if (bitcoinMessage.verify(message, address, signature)) {
+                    const block = new BlockClass.Block({star: star, owner: address});
+                    resolve(await self._addBlock(block));
+                }
+                else {
                     reject(new Error('Bitcoin message unverified.'));
                 }
-                const block = new BlockClass.Block({"star": star, "owner": address});
-                resolve(await self._addBlock(block));
             }
             reject(new Error('Block must be added in less than 5 minutes.'))
         });
@@ -139,7 +145,7 @@ class Blockchain {
     getBlockByHash(hash) {
         let self = this;
         return new Promise((resolve, reject) => {
-           resolve(self.chain.filter(block => block.hash === hash)[0]);
+            resolve(self.chain.filter(block => block.hash === hash)[0]);
         });
     }
 
@@ -190,15 +196,35 @@ class Blockchain {
         let self = this;
         let errorLog = [];
         return new Promise(async (resolve, reject) => {
-            self.chain.forEach(async(b) => {
-                if(b.height === 0) {
+            let promises = [];
+            let chainIndex = 0;
+            self.chain.forEach(async (b) => {
+                promises.push(b.validate());
+                if (block.height > 0) {
+                    let previousBlockHash = block.previousBlockHash;
+                    let blockHash = self.chain[chainIndex - 1].hash;
+                    if (blockHash != previousBlockHash) {
+                        await b.validate() ? true :errorLog.push(new Error(`Block height: ${block.height}'s previous hash don't match.`))
+                    }
+                }
+                else if(b.height === 0) {
                     await b.validate() ? true : errorLog.push("Gensis block cannot be validated");
                 }
-                else if (b.previousBlockHash === self.chain[b.height - 1].hash) {
-                    await b.validate() ? true : errorLog.push(new Error(b + " is not validated"));
-                }
+                chainIndex++;
             });
-            resolve(errorLog);
+            Promise.all(promises).then((results) => {
+                chainIndex = 0;
+                results.forEach(validiated => {
+                    if (!validiated) {
+                        errorLog.push(`Block height error: ${self.chain[chainIndex].height} has been tampered.`);
+                    }
+                    chainIndex++;
+                });
+                resolve(errorLog);
+            }).catch((err) => {
+                console.log(err);
+                reject(err)
+            });
         });
     }
 
