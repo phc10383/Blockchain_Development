@@ -125,7 +125,7 @@ class Blockchain {
             // check if time elapsed is less than 5 minutes
             if (spendTime < (5 * 60 * 1000)) {
                 if (bitcoinMessage.verify(message, address, signature)) {
-                    const block = new BlockClass.Block({star: star, owner: address});
+                    const block = new BlockClass.Block({star: star, owner: address, message: message, signature: signature});
                     resolve(await self._addBlock(block));
                 }
                 else {
@@ -230,4 +230,4 @@ class Blockchain {
 
 }
 
-module.exports.Blockchain = Blockchain;   
+module.exports.Blockchain = Blockchain;
